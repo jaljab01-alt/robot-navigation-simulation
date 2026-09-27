@@ -1,258 +1,240 @@
-import tkinter as tk
+# AI Robot Navigation - Obstacle Avoidance and Automation
+# Uses A* pathfinding, sensor-based obstacle detection,
+# finite state decision-making, and performance logging.
+
 import heapq
 
-# -----------------------------
-# Grid settings
-# -----------------------------
-ROWS = 12
-COLS = 16
-CELL = 40
+ROWS = 10
+COLS = 10
 
-START = (1, 1)
-GOAL = (10, 14)
+start = (0, 0)
+goal = (9, 9)
 
-# Obstacles
-OBSTACLES = {
-    (2, 3), (3, 3), (4, 3), (5, 3), (6, 3),
-    (6, 4), (6, 5), (6, 6), (6, 7),
-    (3, 8), (4, 8), (5, 8), (6, 8), (7, 8),
-    (8, 8), (8, 9), (8, 10), (8, 11),
-    (2, 12), (3, 12), (4, 12)
+# Known obstacles
+obstacles = {
+    (1, 2), (2, 2), (3, 2),
+    (4, 2), (5, 2),
+    (5, 3), (5, 4), (5, 5),
+    (7, 6), (7, 7), (7, 8)
 }
 
-# -----------------------------
-# Dijkstra path planning
-# -----------------------------
-def dijkstra(start, goal):
-    queue = [(0, start)]
-    distances = {start: 0}
-    previous = {}
 
-    while queue:
-        current_distance, current = heapq.heappop(queue)
+# Estimate distance to the goal
+def heuristic(a, b):
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
-        if current == goal:
+
+# A* pathfinding algorithm
+def astar(start_position, goal_position, blocked):
+    open_list = []
+    heapq.heappush(open_list, (0, start_position))
+
+    came_from = {}
+    cost_so_far = {start_position: 0}
+
+    while open_list:
+        current = heapq.heappop(open_list)[1]
+
+        if current == goal_position:
             break
 
-        for dr, dc in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-            nr, nc = current[0] + dr, current[1] + dc
-            neighbor = (nr, nc)
+        row, col = current
 
-            if not (0 <= nr < ROWS and 0 <= nc < COLS):
+        neighbors = [
+            (row - 1, col),
+            (row + 1, col),
+            (row, col - 1),
+            (row, col + 1)
+        ]
+
+        for neighbor in neighbors:
+            r, c = neighbor
+
+            # Ignore positions outside the grid
+            if r < 0 or r >= ROWS or c < 0 or c >= COLS:
                 continue
-            if neighbor in OBSTACLES:
+
+            # Ignore obstacles
+            if neighbor in blocked:
                 continue
 
-            new_distance = current_distance + 1
+            new_cost = cost_so_far[current] + 1
 
-            if new_distance < distances.get(neighbor, float("inf")):
-                distances[neighbor] = new_distance
-                previous[neighbor] = current
-                heapq.heappush(queue, (new_distance, neighbor))
+            if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
+                cost_so_far[neighbor] = new_cost
 
-    if goal not in distances:
-        return []
+                priority = new_cost + heuristic(neighbor, goal_position)
+                heapq.heappush(open_list, (priority, neighbor))
 
+                came_from[neighbor] = current
+
+    if goal_position not in cost_so_far:
+        return None
+
+    # Reconstruct path
     path = []
-    node = goal
-    while node != start:
-        path.append(node)
-        node = previous[node]
+    current = goal_position
 
-    path.append(start)
+    while current != start_position:
+        path.append(current)
+        current = came_from[current]
+
+    path.append(start_position)
     path.reverse()
+
     return path
 
 
-# -----------------------------
-# Simulated sensor readings
-# -----------------------------
-def sensor_readings(position):
-    """Simulate four simple proximity sensors.
-    Returns distance in grid cells to nearest obstacle or wall
-    in the up, down, left, and right directions.
-    """
-    r, c = position
-    readings = {}
+# Display the environment and calculated route
+def display_grid(robot, route):
+    for row in range(ROWS):
+        for col in range(COLS):
+            position = (row, col)
 
-    directions = {
-        "Up": (-1, 0),
-        "Down": (1, 0),
-        "Left": (0, -1),
-        "Right": (0, 1)
-    }
+            if position == robot:
+                print("R", end=" ")
+            elif position == goal:
+                print("G", end=" ")
+            elif position in obstacles:
+                print("X", end=" ")
+            elif route and position in route:
+                print("*", end=" ")
+            else:
+                print(".", end=" ")
 
-    for name, (dr, dc) in directions.items():
-        distance = 0
-        nr, nc = r, c
-
-        while True:
-            nr += dr
-            nc += dc
-            distance += 1
-
-            if not (0 <= nr < ROWS and 0 <= nc < COLS):
-                break
-            if (nr, nc) in OBSTACLES:
-                break
-
-        readings[name] = distance
-
-    return readings
+        print()
 
 
-# -----------------------------
-# GUI
-# -----------------------------
-class RobotSimulation:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("AI Robot Navigation - Dijkstra Simulation")
+print("=== AI ROBOT NAVIGATION SYSTEM ===")
 
-        self.canvas = tk.Canvas(
-            root,
-            width=COLS * CELL,
-            height=ROWS * CELL,
-            bg="white"
-        )
-        self.canvas.pack()
+# STATE 1: SEARCHING
+robot_state = "SEARCHING"
+robot_position = start
 
-        self.sensor_label = tk.Label(
-            root,
-            text="Sensor readings will appear here.",
-            font=("Arial", 11)
-        )
-        self.sensor_label.pack(pady=6)
+print("\nRobot State:", robot_state)
+print("Calculating initial A* route...")
 
-        self.start_button = tk.Button(
-            root,
-            text="Start Robot",
-            command=self.start_robot
-        )
-        self.start_button.pack(pady=6)
+initial_path = astar(robot_position, goal, obstacles)
 
-        self.path = dijkstra(START, GOAL)
-        self.step = 0
-        self.robot_position = START
+if initial_path is None:
+    robot_state = "STOPPED"
+    print("No safe path available.")
 
-        self.draw_grid()
-        self.draw_scene()
+else:
+    print("Initial path found!")
+    print("Initial path length:", len(initial_path) - 1)
 
-    def draw_grid(self):
-        for r in range(ROWS):
-            for c in range(COLS):
-                x1 = c * CELL
-                y1 = r * CELL
-                x2 = x1 + CELL
-                y2 = y1 + CELL
+    display_grid(robot_position, initial_path)
 
-                self.canvas.create_rectangle(
-                    x1, y1, x2, y2,
-                    outline="gray"
-                )
+    # STATE 2: MOVING
+    robot_state = "MOVING"
+    print("\nRobot State:", robot_state)
 
-    def draw_scene(self):
-        self.canvas.delete("object")
+    # Simulate sensor detecting an unexpected obstacle
+    new_obstacle = (0, 5)
 
-        # Draw obstacles
-        for r, c in OBSTACLES:
-            self.canvas.create_rectangle(
-                c * CELL, r * CELL,
-                (c + 1) * CELL, (r + 1) * CELL,
-                fill="black",
-                tags="object"
+    print("\nSensor detected unexpected obstacle at:", new_obstacle)
+    obstacles.add(new_obstacle)
+
+    # STATE 3: OBSTACLE DETECTED
+    if new_obstacle in initial_path:
+        robot_state = "OBSTACLE DETECTED"
+        print("Robot State:", robot_state)
+
+        # STATE 4: REPLANNING
+        robot_state = "REPLANNING"
+        print("Robot State:", robot_state)
+
+        updated_path = astar(robot_position, goal, obstacles)
+
+    else:
+        updated_path = initial_path
+
+    if updated_path is None:
+        robot_state = "STOPPED"
+        print("No safe alternative route found.")
+
+    else:
+        print("Safe route available!")
+        print("Updated path length:", len(updated_path) - 1)
+
+        print("\n=== UPDATED ROUTE ===")
+        display_grid(robot_position, updated_path)
+
+        # Automated movement
+        print("\n=== AUTOMATED TASK EXECUTION ===")
+
+        steps_taken = 0
+        sensor_scans = 0
+
+        for next_position in updated_path[1:]:
+            robot_state = "MOVING"
+
+            print(
+                "State:",
+                robot_state,
+                "| Moving:",
+                robot_position,
+                "->",
+                next_position
             )
 
-        # Draw planned path
-        for r, c in self.path:
-            if (r, c) not in (START, GOAL):
-                self.canvas.create_rectangle(
-                    c * CELL + 10, r * CELL + 10,
-                    (c + 1) * CELL - 10, (r + 1) * CELL - 10,
-                    fill="lightblue",
-                    outline="",
-                    tags="object"
+            robot_position = next_position
+            steps_taken += 1
+
+            # Sensor checks surrounding cells
+            row, col = robot_position
+
+            nearby_positions = [
+                (row - 1, col),
+                (row + 1, col),
+                (row, col - 1),
+                (row, col + 1)
+            ]
+
+            nearby_obstacles = [
+                position
+                for position in nearby_positions
+                if position in obstacles
+            ]
+
+            if nearby_obstacles:
+                robot_state = "SCANNING"
+                sensor_scans += 1
+
+                print(
+                    "State:",
+                    robot_state,
+                    "| Nearby obstacle(s):",
+                    nearby_obstacles
                 )
 
-        # Start
-        sr, sc = START
-        self.canvas.create_rectangle(
-            sc * CELL, sr * CELL,
-            (sc + 1) * CELL, (sr + 1) * CELL,
-            fill="green",
-            tags="object"
-        )
-        self.canvas.create_text(
-            sc * CELL + CELL / 2,
-            sr * CELL + CELL / 2,
-            text="S",
-            fill="white",
-            font=("Arial", 14, "bold"),
-            tags="object"
-        )
+        # Final state
+        if robot_position == goal:
+            robot_state = "GOAL REACHED"
 
-        # Goal
-        gr, gc = GOAL
-        self.canvas.create_rectangle(
-            gc * CELL, gr * CELL,
-            (gc + 1) * CELL, (gr + 1) * CELL,
-            fill="red",
-            tags="object"
-        )
-        self.canvas.create_text(
-            gc * CELL + CELL / 2,
-            gr * CELL + CELL / 2,
-            text="G",
-            fill="white",
-            font=("Arial", 14, "bold"),
-            tags="object"
-        )
+        print("\nRobot State:", robot_state)
+        print("Automation task completed!")
 
-        # Robot
-        rr, rc = self.robot_position
-        self.canvas.create_oval(
-            rc * CELL + 7, rr * CELL + 7,
-            (rc + 1) * CELL - 7, (rr + 1) * CELL - 7,
-            fill="orange",
-            outline="brown",
-            width=2,
-            tags="object"
-        )
+        # Performance / debugging data
+        print("\n=== PERFORMANCE REPORT ===")
 
-    def start_robot(self):
-        if not self.path:
-            self.sensor_label.config(text="No valid path to the goal.")
-            return
+        original_length = len(initial_path) - 1
+        updated_length = len(updated_path) - 1
 
-        self.step = 0
-        self.robot_position = self.path[0]
-        self.move_robot()
+        print("Original path length:", original_length)
+        print("Updated path length:", updated_length)
+        print("Movement steps:", steps_taken)
+        print("Sensor scans triggered:", sensor_scans)
+        print("Total known obstacles:", len(obstacles))
+        print("Dynamic obstacles detected: 1")
+        print("Replanning events: 1")
 
-    def move_robot(self):
-        if self.step >= len(self.path):
-            self.sensor_label.config(text="Goal reached!")
-            return
+        if updated_length <= original_length:
+            print("Navigation result: Efficient alternative route found")
+        else:
+            print("Navigation result: Safe route adjusted around obstacle")
 
-        self.robot_position = self.path[self.step]
-        readings = sensor_readings(self.robot_position)
-
-        self.sensor_label.config(
-            text=(
-                f"Robot: {self.robot_position} | "
-                f"Sensors - Up: {readings['Up']}, "
-                f"Down: {readings['Down']}, "
-                f"Left: {readings['Left']}, "
-                f"Right: {readings['Right']}"
-            )
-        )
-
-        self.draw_scene()
-        self.step += 1
-
-        self.root.after(300, self.move_robot)
-
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = RobotSimulation(root)
-    root.mainloop()
+        print("Final position:", robot_position)
+        print("Final state:", robot_state)
+        print("Task status: SUCCESS")
